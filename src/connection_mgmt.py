@@ -1,7 +1,7 @@
-
 import json
 import os
 import subprocess
+from threading import Thread
 
 from protocols import Protocol, UnknownProtocolException
 
@@ -32,20 +32,20 @@ class Connection:
                 raise NotImplemented("Need to research and test connection")
             
             case Protocol.SSH:
-                command = [r'C:\Windows\System32\OpenSSH\ssh.exe', f'{self.username}@{self.address}']
-                subprocess.run(command)
+                command = " ".join(['start', r'C:\Windows\System32\OpenSSH\ssh.exe', f'{self.username}@{self.address}'])
+                thread = Thread(target=os.system, args=([command,]))
+                thread.start()
 
             case Protocol.RDP:
-                commmand = ["cmdkey", f'/generic:"{self.address}"', f'/user:"{self.username}"']
+                command = " ".join(["cmdkey", f'/generic:"{self.address}"', f'/user:"{self.username}"'])
                 subprocess.run(command)
-                command = [r"C:\WINDOWS\system32\mstsc.exe", "/v:{address}"]
+                command = " ".join([r"C:\WINDOWS\system32\mstsc.exe", "/v:{address}"])
                 subprocess.run(command)
-                command = ["cmdkey", "/delete:{self.address}"]
+                command = " ".join(["cmdkey", "/delete:{self.address}"])
                 subprocess.run(command)
 
             case Protocol.FTP:                
                 command = [r"C:\Program Files\FileZilla FTP Client\filezilla.exe", f"ftp://{self.username}@{self.address}"]
-                print(f"Should be opening {" ".join(command)}")
                 subprocess.run(" ".join(command))
                 
         

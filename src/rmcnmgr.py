@@ -69,6 +69,7 @@ def connect_connection(arg):
     selections = Connection.load_connections()
     if not selections:
         return
+    selections = [x for x in selections if x.name == selection]
     if len(selections) > 1:
         raise RuntimeError(f"Multiple connections found for {selection}")
     selections[0].connect()
