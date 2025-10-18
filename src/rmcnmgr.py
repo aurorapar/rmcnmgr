@@ -1,10 +1,12 @@
-import binascii
-import os
+import hashlib
+import time
+
+from threading import Thread
 
 from tkinter import *
 from tkinter import messagebox
 
-from connection_mgmt import Connection
+from connection_mgmt import Connection, CONNECTION_FILE
 from gui_settings import *
 from password_manager import PasswordManager
 from protocols import Protocol
@@ -27,23 +29,28 @@ class Gui(Frame):
 
         self.connection_list = Listbox(self, bg=FEATURE_BACKGROUND_COLOR, fg=FONT_COLOR, selectmode=SINGLE)
 
-        self.connect_button = Button(self, text="Connect", activebackground=HIGHLIGHT_COLOR, bg=BACKGROUND_COLOR,
-                                fg=FONT_COLOR, font=FONT,
+        self.pw_button = Button(self, text="Enter Password", activebackground=HIGHLIGHT_COLOR, bg=FEATURE_BACKGROUND_COLOR,
+                                     fg=FONT_COLOR, font=FONT, width=BUTTON_WIDTH,
+                                     highlightbackground=BACKGROUND_COLOR, highlightthickness=HIGHLIGHT_THICKNESS,
+                                     overrelief="raised")
+
+        self.connect_button = Button(self, text="Connect", activebackground=HIGHLIGHT_COLOR, bg=FEATURE_BACKGROUND_COLOR,
+                                fg=FONT_COLOR, font=FONT, width=BUTTON_WIDTH,
                                 highlightbackground=BACKGROUND_COLOR, highlightthickness=HIGHLIGHT_THICKNESS,
                                 overrelief="raised")
 
-        self.add_button = Button(self, text="Add", activebackground=HIGHLIGHT_COLOR, bg=BACKGROUND_COLOR,
-                            fg=FONT_COLOR, font=FONT,
+        self.add_button = Button(self, text="Add Connection", activebackground=HIGHLIGHT_COLOR, bg=FEATURE_BACKGROUND_COLOR,
+                            fg=FONT_COLOR, font=FONT, width=BUTTON_WIDTH,
                             highlightbackground=BACKGROUND_COLOR, highlightthickness=HIGHLIGHT_THICKNESS,
                             overrelief="raised")
 
-        self.edit_button = Button(self, text="Edit", activebackground=HIGHLIGHT_COLOR, bg=BACKGROUND_COLOR,
-                             fg=FONT_COLOR, font=FONT,
+        self.edit_button = Button(self, text="Edit Connection", activebackground=HIGHLIGHT_COLOR, bg=FEATURE_BACKGROUND_COLOR,
+                             fg=FONT_COLOR, font=FONT, width=BUTTON_WIDTH,
                              highlightbackground=BACKGROUND_COLOR, highlightthickness=HIGHLIGHT_THICKNESS,
                              overrelief="raised")
 
-        self.remove_button = Button(self, text="Remove", activebackground=HIGHLIGHT_COLOR, bg=BACKGROUND_COLOR,
-                               fg=FONT_COLOR, font=FONT,
+        self.remove_button = Button(self, text="Remove Connection", activebackground=HIGHLIGHT_COLOR, bg=FEATURE_BACKGROUND_COLOR,
+                               fg=FONT_COLOR, font=FONT, width=BUTTON_WIDTH,
                                highlightbackground=BACKGROUND_COLOR, highlightthickness=HIGHLIGHT_THICKNESS,
                                overrelief="raised")
 
@@ -54,9 +61,10 @@ class Gui(Frame):
         self.connection_list.grid(column=0, row=1, columnspan=4, padx=PAD_X, pady=PAD_Y, sticky='nswe')
 
         self.connect_button.grid(column=0, row=2, padx=PAD_X, pady=PAD_Y, sticky='sw')
-        self.add_button.grid(column=1, row=2, padx=PAD_X, pady=PAD_Y, sticky='s')
-        self.edit_button.grid(column=2, row=2, padx=PAD_X, pady=PAD_Y, sticky='s')
-        self.remove_button.grid(column=3, row=2, padx=PAD_X, pady=PAD_Y, sticky='se')
+        self.pw_button.grid(column=3, row=2, columnspan=4, padx=PAD_X, pady=PAD_Y, sticky='se')
+        self.add_button.grid(column=0, row=3, padx=PAD_X, pady=PAD_Y, sticky='sw')
+        self.edit_button.grid(column=3, row=3, padx=PAD_X, pady=PAD_Y, sticky='se')
+        self.remove_button.grid(column=0, row=4, columnspan=4, padx=PAD_X, pady=PAD_Y, sticky='sw')
 
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -70,13 +78,16 @@ class Gui(Frame):
         self.connection_list.columnconfigure(0, weight=1)
         self.connection_list.rowconfigure(0, weight=1)
 
+        self.pw_button.bind("<Button-1>", self.password_manager.get_password)
         self.connect_button.bind("<Button-1>", self.connect_connection)
         self.add_button.bind("<Button-1>", self.create_new_connection)
         self.edit_button.bind("<Button-1>", self.edit_connection)
         self.remove_button.bind("<Button-1>", self.remove_connection)
 
+        self.file_hash = self.retrieve_file_hash()
+
     def connect_connection(self, arg):
-        if self.password_manager.password_prompt:
+        if not self.password_manager.password:
             messagebox.showerror("Error", "You must enter a password first!")
             return
 
@@ -95,10 +106,10 @@ class Gui(Frame):
         selections[0].connect()
 
     def create_new_connection(self, arg, connection: Connection = None):
-        if self.password_manager.password_prompt:
+        if not self.password_manager.password:
             messagebox.showerror("Error", "You must enter a password first!")
             return
-        self.build_connect_list()
+
         self.added_gui = Toplevel(root)
         self.added_gui.title("Add Connection")
         self.added_gui.geometry("250x250")
@@ -136,7 +147,6 @@ class Gui(Frame):
                 if connection.protocol == protocol:
                     opt.select()
                     opt.state = "active"
-                    print(f"Setting {protocol.name} as active")
             else:
                 opt.select()
 
@@ -166,36 +176,40 @@ class Gui(Frame):
         if self.previous_connection and self.previous_connection.name != new_connection.name:
             Connection.remove_connection(self.password_manager, self.previous_connection.name)
             self.previous_connection = None
-        self.build_connect_list()
 
     def edit_connection(self, arg):
-        if not self.connection_list.curselection():
-            return
-        if self.password_manager.password_prompt:
+        if not self.password_manager.password:
             messagebox.showerror("Error", "You must enter a password first!")
             return
-        self.build_connect_list()
+
+        if not self.connection_list.curselection():
+            return
+
         selection = self.connection_list.get(self.connection_list.curselection()[0])
+        if selection == "No connections added":
+            return
         connection = [x for x in Connection.load_connections(self.password_manager) if x.name == selection][0]
         if not connection:
             raise RuntimeError(f"Bad list option: {self.connection_list.curselection()} {selection}")
         self.create_new_connection(None, connection)
 
     def remove_connection(self, arg):
-        if not self.connection_list.curselection():
-            return
-        if self.password_manager.password_prompt:
+        if not self.password_manager.password:
             messagebox.showerror("Error", "You must enter a password first!")
             return
-        self.build_connect_list()
+
+        if not self.connection_list.curselection():
+            return
+
         selection = self.connection_list.get(self.connection_list.curselection()[0])
         confirmation = messagebox.askyesno("Question", f"Are you sure you want to delete {selection}?")
         if confirmation:
             Connection.remove_connection(self.password_manager, selection)
-            self.build_connect_list()
 
-    def build_connect_list(self):
+    def build_connection_list(self):
         connections = Connection.load_connections(self.password_manager)
+        if not connections:
+            return
         while self.connection_list.get(0):
             self.connection_list.delete(0)
         for connection_index, connection in enumerate(connections):
@@ -203,11 +217,40 @@ class Gui(Frame):
         if not connections:
             self.connection_list.insert(1, "No connections added")
 
+    def retrieve_file_hash(self):
+        with open(CONNECTION_FILE, 'rb') as f:
+            return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+def file_hash_updater(gui):
+    password_updated = False
+    while True:
+        if not gui.password_manager.password:
+            continue
+
+        if not password_updated:
+            gui.build_connection_list()
+            password_updated = True
+            continue
+
+        current_hash = gui.retrieve_file_hash()
+
+        if current_hash == gui.file_hash:
+            continue
+        gui.file_hash = current_hash
+
+        gui.build_connection_list()
+
+        time.sleep(1)
+
 
 def main():
     password_manager = PasswordManager(root)
     gui = Gui(root, password_manager)
     password_manager.get_password()
+
+    update_list_thread = Thread(target=file_hash_updater, args=(gui,), daemon=True)
+    update_list_thread.start()
 
     root.focus()
     root.mainloop()

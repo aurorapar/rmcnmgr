@@ -53,8 +53,8 @@ class Connection:
 
     def to_json(self):
         return {
-            "name": self.name,
-            "protocol": self.protocol.name,
+            "name": binascii.hexlify(self.name).decode(),
+            "protocol": binascii.hexlify(self.protocol).decode(),
             "address": binascii.hexlify(self.address).decode(),
             "username": binascii.hexlify(self.username).decode(),
             "salt": binascii.hexlify(self.salt).decode()
@@ -72,22 +72,30 @@ class Connection:
             salt = binascii.unhexlify(c['salt'])
             address = binascii.unhexlify(c['address'])
             address = password_manager.decrypt_data(password, salt, address)
+            if not address:
+                password_manager.reset_password_prompt()
+                return
             username = binascii.unhexlify(c['username'])
             username = password_manager.decrypt_data(password, salt, username)
-            protocol = [p for p in Protocol if c['protocol'] == p.name][0]
+            name = binascii.unhexlify(c['name'])
+            name = password_manager.decrypt_data(password, salt, name)
+            protocol = binascii.unhexlify(c['protocol'])
+            protocol = password_manager.decrypt_data(password, salt, protocol)
+            protocol = [p for p in Protocol if protocol == p.name][0]
             connections.append(
-                Connection(name=c['name'], protocol=protocol, address=address, username=username, salt=salt)
+                Connection(name=name, protocol=protocol, address=address, username=username, salt=salt)
             )
 
         return connections
 
     @staticmethod
     def add_connection(password_manager, connection):
-        connections = Connection.load_connections(password_manager)
         connections = [x for x in Connection.load_connections(password_manager)]
         connections.append(connection)
         password = password_manager.get_password()
         for c in connections:
+            c.name = password_manager.encrypt_data(password, c.salt, c.name)
+            c.protocol = password_manager.encrypt_data(password, c.salt, c.protocol.name)
             c.address = password_manager.encrypt_data(password, c.salt, c.address)
             c.username = password_manager.encrypt_data(password, c.salt, c.username)
         with open(CONNECTION_FILE, 'w') as f:
