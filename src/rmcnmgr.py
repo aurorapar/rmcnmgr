@@ -76,13 +76,17 @@ class Gui(Frame):
         self.remove_button.bind("<Button-1>", self.remove_connection)
 
     def connect_connection(self, arg):
+        if self.password_manager.password_prompt:
+            messagebox.showerror("Error", "You must enter a password first!")
+            return
+
         selection = self.connection_list.curselection()
         if not selection:
             return
 
         selection = selection[0]
         selection = self.connection_list.get(selection)
-        selections = Connection.load_connections()
+        selections = Connection.load_connections(self.password_manager)
         if not selections:
             return
         selections = [x for x in selections if x.name == selection]
@@ -94,7 +98,7 @@ class Gui(Frame):
         if self.password_manager.password_prompt:
             messagebox.showerror("Error", "You must enter a password first!")
             return
-
+        self.build_connect_list()
         self.added_gui = Toplevel(root)
         self.added_gui.title("Add Connection")
         self.added_gui.geometry("250x250")
@@ -170,6 +174,7 @@ class Gui(Frame):
         if self.password_manager.password_prompt:
             messagebox.showerror("Error", "You must enter a password first!")
             return
+        self.build_connect_list()
         selection = self.connection_list.get(self.connection_list.curselection()[0])
         connection = [x for x in Connection.load_connections(self.password_manager) if x.name == selection][0]
         if not connection:
@@ -182,6 +187,7 @@ class Gui(Frame):
         if self.password_manager.password_prompt:
             messagebox.showerror("Error", "You must enter a password first!")
             return
+        self.build_connect_list()
         selection = self.connection_list.get(self.connection_list.curselection()[0])
         confirmation = messagebox.askyesno("Question", f"Are you sure you want to delete {selection}?")
         if confirmation:
@@ -201,7 +207,7 @@ class Gui(Frame):
 def main():
     password_manager = PasswordManager(root)
     gui = Gui(root, password_manager)
-    gui.build_connect_list()
+    password_manager.get_password()
 
     root.focus()
     root.mainloop()

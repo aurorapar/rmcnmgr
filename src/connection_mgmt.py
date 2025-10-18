@@ -55,8 +55,8 @@ class Connection:
         return {
             "name": self.name,
             "protocol": self.protocol.name,
-            "address": self.address,
-            "username": self.username,
+            "address": binascii.hexlify(self.address).decode(),
+            "username": binascii.hexlify(self.username).decode(),
             "salt": binascii.hexlify(self.salt).decode()
         }
 
@@ -65,16 +65,20 @@ class Connection:
         password = password_manager.get_password()
         with open(CONNECTION_FILE, 'r') as f:
             serialized_connections = json.loads(f.read())
-        connections = [
-            Connection(
-                name=c['name'],
-                protocol=[p for p in Protocol if c['protocol'] == p.name][0],
-                address=password_manager.decrypt_data(password, c['salt'], c['address']),
-                username=password_manager.decrypt_data(password, c['salt'], c['username']),
-                salt=binascii.unhexlify(c['salt'])
+        if not serialized_connections:
+            return []
+        connections = []
+        for c in serialized_connections:
+            salt = binascii.unhexlify(c['salt'])
+            address = binascii.unhexlify(c['address'])
+            address = password_manager.decrypt_data(password, salt, address)
+            username = binascii.unhexlify(c['username'])
+            username = password_manager.decrypt_data(password, salt, username)
+            protocol = [p for p in Protocol if c['protocol'] == p.name][0]
+            connections.append(
+                Connection(name=c['name'], protocol=protocol, address=address, username=username, salt=salt)
             )
-            for c in serialized_connections
-        ]
+
         return connections
 
     @staticmethod

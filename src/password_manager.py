@@ -14,8 +14,8 @@ from gui_settings import *
 
 class PasswordManager:
 
-    key_size = 256
-    block_size = 16
+    key_size_bits = 256
+    block_size_bits = 128
     encoding = 'UTF-8'
 
     def __init__(self, parent):
@@ -103,7 +103,7 @@ class PasswordManager:
         cipher = Cipher(algorithms.AES(key), modes.CBC(salt))
         encryptor = cipher.encryptor()
         padded_data = PasswordManager.pad_data(data)
-        encrypted_data = encryptor.update(PasswordManager.pad_data(data)) + encryptor.finalize()
+        encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
         return encrypted_data
 
     @staticmethod
@@ -119,7 +119,7 @@ class PasswordManager:
     def generate_aes_key(password, salt):
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=int(PasswordManager.key_size/8),
+            length=int(PasswordManager.key_size_bits / 8),
             salt=salt,
             iterations=1_200_000,
         )
@@ -128,16 +128,16 @@ class PasswordManager:
 
     @staticmethod
     def generate_salt():
-        return os.urandom(PasswordManager.block_size)
+        return os.urandom(int(PasswordManager.block_size_bits/8))
 
     @staticmethod
     def pad_data(data):
-        padder = padding.PKCS7(PasswordManager.block_size).padder()
+        padder = padding.PKCS7(PasswordManager.block_size_bits).padder()
         padded_data = padder.update(data.encode(PasswordManager.encoding))
         return padded_data + padder.finalize()
 
     @staticmethod
     def unpad_data(data):
-        unpadder = padding.PKCS7(PasswordManager.block_size).unpadder()
+        unpadder = padding.PKCS7(PasswordManager.block_size_bits).unpadder()
         unpadded_data = unpadder.update(data)
         return unpadded_data + unpadder.finalize()
