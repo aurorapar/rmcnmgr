@@ -1,5 +1,5 @@
 from enum import Enum
-import subprocess
+
 
 class Protocol(Enum):
     VNC = 1,

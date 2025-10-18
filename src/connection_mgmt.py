@@ -1,3 +1,4 @@
+import binascii
 import json
 import os
 import subprocess
@@ -14,15 +15,17 @@ if not os.path.exists(CONNECTION_FILE):
 
 class Connection:
 
-    def __init__(self, name, protocol: Protocol, address, username):
+    def __init__(self, name, protocol: Protocol, address, username, salt):
 
         self.name = name
         self.protocol = protocol
-        if protocol not in [p for p in Protocol]:
+
+        if protocol not in [*Protocol]:
             raise UnknownProtocolException(f"Protocol {protocol} unknown")
         
         self.address = address
         self.username = username
+        self.salt = salt
 
     def connect(self):
         match self.protocol:
@@ -47,46 +50,60 @@ class Connection:
             case Protocol.FTP:                
                 command = [r"C:\Program Files\FileZilla FTP Client\filezilla.exe", f"ftp://{self.username}@{self.address}"]
                 subprocess.run(" ".join(command))
-                
-        
 
     def to_json(self):
         return {
             "name": self.name,
             "protocol": self.protocol.name,
             "address": self.address,
-            "username": self.username
+            "username": self.username,
+            "salt": binascii.hexlify(self.salt).decode()
         }
 
-
-    def load_connections():
+    @staticmethod
+    def load_connections(password_manager):
+        password = password_manager.get_password()
         with open(CONNECTION_FILE, 'r') as f:
-            serialized_connections = json.loads(f.read())  
-        connections = [Connection(
-            name=c['name'], 
-            protocol=[p for p in Protocol if c['protocol'] == p.name][0], 
-            address=c['address'], 
-            username=c['username']
-        ) for c in serialized_connections]
+            serialized_connections = json.loads(f.read())
+        connections = [
+            Connection(
+                name=c['name'],
+                protocol=[p for p in Protocol if c['protocol'] == p.name][0],
+                address=password_manager.decrypt_data(password, c['salt'], c['address']),
+                username=password_manager.decrypt_data(password, c['salt'], c['username']),
+                salt=binascii.unhexlify(c['salt'])
+            )
+            for c in serialized_connections
+        ]
         return connections
-    
-    def add_connection(connection):
-        connections = Connection.load_connections()
-        connections = [x for x in Connection.load_connections()]
+
+    @staticmethod
+    def add_connection(password_manager, connection):
+        connections = Connection.load_connections(password_manager)
+        connections = [x for x in Connection.load_connections(password_manager)]
         connections.append(connection)
+        password = password_manager.get_password()
+        for c in connections:
+            c.address = password_manager.encrypt_data(password, c.salt, c.address)
+            c.username = password_manager.encrypt_data(password, c.salt, c.username)
         with open(CONNECTION_FILE, 'w') as f:
             json.dump(connections, f)
 
-    def remove_connection(pruned_connection):
-        if pruned_connection:
-            connections = Connection.load_connections()
-            connections = [x for x in Connection.load_connections() if x.name != pruned_connection]
+    @staticmethod
+    def remove_connection(password_manager, pruned_connection_name):
+        if pruned_connection_name:
+            connections = [x for x in Connection.load_connections(password_manager) if x.name != pruned_connection_name]
+            password = password_manager.get_password()
+            for c in connections:
+                c.address = password_manager.encrypt_data(password, c.salt, c.address)
+                c.username = password_manager.encrypt_data(password, c.salt, c.username)
             with open(CONNECTION_FILE, 'w') as f:
                 json.dump(connections, f)
 
 
 def _default(self, obj):
     return getattr(obj.__class__, "to_json", _default.default)(obj)
+
 
 _default.default = json.JSONEncoder().default
 json.JSONEncoder.default = _default
